@@ -257,67 +257,96 @@
         if (kuroshiroInitialized && kuroshiroInstance) {
           console.log("Using kuroshiro for conversion");
           
-          // 単語ごとに処理するために簡易的に分割
-          const words = text.split(/(\s+)/).filter(word => word.trim().length > 0);
-          console.log("Split into words:", words);
+          // 文字ごとに処理する
+          let currentWord = "";
+          let currentType = null;
           
-          for (const word of words) {
-            // 漢字が含まれているかチェック
-            const hasKanji = /[\u4e00-\u9faf]/.test(word);
+          for (let i = 0; i < text.length; i++) {
+            const char = text[i];
+            const isKanji = /[\u4e00-\u9faf]/.test(char);
+            const isHiragana = /[\u3040-\u309F]/.test(char);
+            const isKatakana = /[\u30A0-\u30FF]/.test(char);
             
-            if (hasKanji) {
-              try {
-                // kuroshiroを使用して変換
-                const result = await kuroshiroInstance.convert(word, {
-                  to: "hiragana",
-                  mode: "furigana"
-                });
-                
-                console.log("Kuroshiro result for", word, ":", result);
-                
-                // HTML文字列を一時的な要素に入れて解析
-                const tempDiv = document.createElement('div');
-                tempDiv.innerHTML = result;
-                
-                // 変換結果からふりがなを抽出
-                let furigana = "";
-                const extractFurigana = (node) => {
-                  if (node.nodeType === Node.TEXT_NODE) {
-                    return;
-                  } else if (node.tagName === 'RUBY') {
-                    const rt = node.querySelector('rt');
-                    if (rt) {
-                      furigana += rt.textContent;
-                    }
-                  } else {
-                    Array.from(node.childNodes).forEach(extractFurigana);
-                  }
-                };
-                
-                extractFurigana(tempDiv);
-                console.log("Extracted furigana for", word, ":", furigana);
-                
-                tokens.push({
-                  word: word,
-                  furigana: furigana || "" // 空文字列を返す（自動で割り当てられない場合）
-                });
-              } catch (error) {
-                console.error("Error converting word:", word, error);
-                // エラーの場合は辞書を使用
-                const furigana = wordDict[word] || "";
-                tokens.push({
-                  word: word,
-                  furigana: furigana
-                });
-              }
+            let type = isKanji ? "kanji" : (isHiragana ? "hiragana" : (isKatakana ? "katakana" : "other"));
+            
+            if (currentType === null || currentType === type || 
+                (currentType === "kanji" && type === "hiragana")) {
+              currentWord += char;
+              currentType = type;
             } else {
-              // 漢字を含まない単語はそのまま追加
-              tokens.push({
-                word: word,
-                furigana: ""
-              });
+              if (currentWord) {
+                await processWord(currentWord, tokens);
+              }
+              currentWord = char;
+              currentType = type;
             }
           }
+          
+          if (currentWord) {
+            await processWord(currentWord, tokens);
+          }
+          
+          console.log("Final tokens:", tokens);
+        }
+        
+        // 単語を処理する関数
+        async function processWord(word, tokensArray) {
+          console.log("Processing word:", word);
+          const hasKanji = /[\u4e00-\u9faf]/.test(word);
+          
+          if (hasKanji) {
+            try {
+              // kuroshiroを使用して変換
+              const result = await kuroshiroInstance.convert(word, {
+                to: "hiragana",
+                mode: "furigana"
+              });
+              
+              console.log("Kuroshiro result for", word, ":", result);
+              
+              // HTML文字列を一時的な要素に入れて解析
+              const tempDiv = document.createElement('div');
+              tempDiv.innerHTML = result;
+              
+              // 変換結果からふりがなを抽出
+              let furigana = "";
+              const extractFurigana = (node) => {
+                if (node.nodeType === Node.TEXT_NODE) {
+                  return;
+                } else if (node.tagName === 'RUBY') {
+                  const rt = node.querySelector('rt');
+                  if (rt) {
+                    furigana += rt.textContent;
+                  }
+                } else {
+                  Array.from(node.childNodes).forEach(extractFurigana);
+                }
+              };
+              
+              extractFurigana(tempDiv);
+              console.log("Extracted furigana for", word, ":", furigana);
+              
+              tokensArray.push({
+                word: word,
+                furigana: furigana || "" // 空文字列を返す（自動で割り当てられない場合）
+              });
+            } catch (error) {
+              console.error("Error converting word:", word, error);
+              // エラーの場合は辞書を使用
+              const furigana = wordDict[word] || "";
+              tokensArray.push({
+                word: word,
+                furigana: furigana
+              });
+            }
+          } else {
+            // 漢字を含まない単語はそのまま追加
+            tokensArray.push({
+              word: word,
+              furigana: ""
+            });
+          }
+        }
           
           console.log("Final tokens:", tokens);
         } else {
