@@ -270,23 +270,75 @@
             if (node.nodeType === Node.TEXT_NODE) {
               // テキストノードはそのまま追加
               if (node.textContent.trim()) {
-                currentTokens.push({
-                  word: node.textContent,
-                  furigana: ""
-                });
+                // テキストを文字ごとに分割して追加
+                const text = node.textContent;
+                let currentWord = "";
+                let currentType = null;
+                
+                for (let i = 0; i < text.length; i++) {
+                  const char = text[i];
+                  const isKanji = /[\u4e00-\u9faf]/.test(char);
+                  const isHiragana = /[\u3040-\u309F]/.test(char);
+                  const isKatakana = /[\u30A0-\u30FF]/.test(char);
+                  
+                  let type = isKanji ? "kanji" : (isHiragana ? "hiragana" : (isKatakana ? "katakana" : "other"));
+                  
+                  if (currentType === null || currentType === type) {
+                    currentWord += char;
+                    currentType = type;
+                  } else {
+                    if (currentWord) {
+                      currentTokens.push({
+                        word: currentWord,
+                        furigana: ""
+                      });
+                    }
+                    currentWord = char;
+                    currentType = type;
+                  }
+                }
+                
+                if (currentWord) {
+                  currentTokens.push({
+                    word: currentWord,
+                    furigana: ""
+                  });
+                }
               }
             } else if (node.tagName === 'RUBY') {
               // ruby要素から単語とふりがなを抽出
-              const word = node.querySelector('rb') ? 
-                           node.querySelector('rb').textContent : 
-                           node.textContent.replace(node.querySelector('rt').textContent, '');
-              const furigana = node.querySelector('rt') ? 
-                              node.querySelector('rt').textContent : '';
+              const rb = node.querySelector('rb');
+              const rt = node.querySelector('rt');
               
-              currentTokens.push({
-                word: word,
-                furigana: furigana
-              });
+              let word = "";
+              let furigana = "";
+              
+              if (rb && rt) {
+                word = rb.textContent;
+                furigana = rt.textContent;
+              } else {
+                // rb, rtタグがない場合は別の方法で抽出
+                const rtElements = node.getElementsByTagName('rt');
+                if (rtElements.length > 0) {
+                  furigana = rtElements[0].textContent;
+                  // rtを除いたテキストを取得
+                  let tempWord = node.textContent;
+                  for (let i = 0; i < rtElements.length; i++) {
+                    tempWord = tempWord.replace(rtElements[i].textContent, '');
+                  }
+                  word = tempWord;
+                } else {
+                  word = node.textContent;
+                }
+              }
+              
+              if (word) {
+                console.log("Found ruby element:", word, "with furigana:", furigana);
+                currentTokens.push({
+                  word: word,
+                  furigana: furigana
+                });
+              }
             } else {
               // その他の要素は子ノードを再帰的に処理
               Array.from(node.childNodes).forEach(processNode);
@@ -294,6 +346,7 @@
           };
           
           processNode(tempDiv);
+          console.log("Extracted tokens:", currentTokens);
           tokens = currentTokens;
         } else {
           // 簡易的な分割ルール
