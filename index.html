@@ -54,8 +54,26 @@
         
         statusEl.textContent = "kuroshiroを初期化中...";
         
-        kuroshiroInstance = new Kuroshiro();
-        await kuroshiroInstance.init(new KuromojiAnalyzer());
+        // Check if Kuroshiro is a module with default export
+        if (typeof Kuroshiro === 'object' && Kuroshiro.default) {
+          kuroshiroInstance = new Kuroshiro.default();
+          console.log("Using Kuroshiro.default");
+        } else {
+          kuroshiroInstance = new Kuroshiro();
+          console.log("Using Kuroshiro directly");
+        }
+        
+        // Check if KuromojiAnalyzer is a module with default export
+        let analyzer;
+        if (typeof KuromojiAnalyzer === 'object' && KuromojiAnalyzer.default) {
+          analyzer = new KuromojiAnalyzer.default();
+          console.log("Using KuromojiAnalyzer.default");
+        } else {
+          analyzer = new KuromojiAnalyzer();
+          console.log("Using KuromojiAnalyzer directly");
+        }
+        
+        await kuroshiroInstance.init(analyzer);
         
         kuroshiroInitialized = true;
         loadingEl.style.display = "none";
@@ -64,6 +82,7 @@
         statusEl.textContent = "kuroshiroの初期化が完了しました";
       } catch (error) {
         console.error("kuroshiroの初期化に失敗しました:", error);
+        console.error("Error details:", error.stack);
         loadingEl.style.display = "none";
         parseButton.disabled = false;
         manualButton.disabled = false;
