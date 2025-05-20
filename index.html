@@ -1,0 +1,352 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>ルビ編集UI</title>
+  <style>
+    body { font-family: sans-serif; margin: 20px; }
+    ruby { cursor: pointer; padding: 2px; }
+    ruby:hover { background-color: #f0f0f0; }
+    rt { font-size: 0.6em; color: gray; }
+    #editor { margin-top: 1em; font-size: 1.2em; line-height: 2; border: 1px solid #ddd; padding: 10px; min-height: 100px; }
+    #input-area { margin-top: 1em; }
+    .word-wrapper { display: inline-block; margin-right: 0.25em; }
+    .controls { margin: 10px 0; }
+    .status { color: #666; font-size: 0.9em; margin-top: 5px; }
+    #loading { color: #ff6600; font-weight: bold; }
+  </style>
+</head>
+<body>
+  <h2>ルビ付きテキスト編集</h2>
+  <div id="input-area">
+    <textarea id="inputText" rows="3" cols="40" placeholder="文章を入力してください">唐揚げ弁当を作る</textarea><br>
+    <div class="controls">
+      <button id="parseButton">自動分割</button>
+      <button id="manualButton">手動分割</button>
+      <span id="loading" style="display: none;">辞書読み込み中...</span>
+      <span id="status" class="status"></span>
+    </div>
+  </div>
+  <div id="editor"></div>
+
+  <script src="/node_modules/kuroshiro/dist/kuroshiro.min.js"></script>
+  <script src="/node_modules/kuroshiro-analyzer-kuromoji/dist/kuroshiro-analyzer-kuromoji.min.js"></script>
+  <script>
+    // 単語データを保存する配列
+    let data = [];
+    const editor = document.getElementById("editor");
+    const statusEl = document.getElementById("status");
+    const inputText = document.getElementById("inputText");
+    const parseButton = document.getElementById("parseButton");
+    const manualButton = document.getElementById("manualButton");
+    const loadingEl = document.getElementById("loading");
+    
+    // kuroshiroインスタンスとアナライザーを準備
+    let kuroshiroInitialized = false;
+    let kuroshiroInstance = null;
+    
+    // kuroshiroを初期化する関数
+    async function initKuroshiro() {
+      try {
+        loadingEl.style.display = "inline";
+        parseButton.disabled = true;
+        manualButton.disabled = true;
+        
+        statusEl.textContent = "kuroshiroを初期化中...";
+        
+        kuroshiroInstance = new Kuroshiro();
+        await kuroshiroInstance.init(new KuromojiAnalyzer());
+        
+        kuroshiroInitialized = true;
+        loadingEl.style.display = "none";
+        parseButton.disabled = false;
+        manualButton.disabled = false;
+        statusEl.textContent = "kuroshiroの初期化が完了しました";
+      } catch (error) {
+        console.error("kuroshiroの初期化に失敗しました:", error);
+        loadingEl.style.display = "none";
+        parseButton.disabled = false;
+        manualButton.disabled = false;
+        statusEl.textContent = "辞書の初期化に失敗しました。既存の辞書を使用します。";
+      }
+    }
+    
+    // 漢字辞書（小学校1年生から6年生までの教育漢字1026字の一部）
+    const kanjiDict = {
+      "一": "いち", "右": "みぎ", "雨": "あめ", "円": "えん", "王": "おう", 
+      "音": "おと", "下": "した", "火": "ひ", "花": "はな", "貝": "かい",
+      "学": "がく", "気": "き", "九": "きゅう", "休": "やす", "玉": "たま"
+      // 省略 - 実際の実装では1026字すべてを含む
+    };
+    
+    // 単語辞書（複合語のふりがな）
+    const wordDict = {
+      "唐揚げ": "からあげ", "弁当": "べんとう", "寿司": "すし", "天ぷら": "てんぷら",
+      "学校": "がっこう", "図書館": "としょかん", "病院": "びょういん", "駅": "えき",
+      "電車": "でんしゃ", "新幹線": "しんかんせん", "地下鉄": "ちかてつ", "バス": "ばす"
+      // 省略 - 実際の実装では200以上の単語を含む
+    };
+    
+    // 漢字にふりがなを自動的に割り当てる関数
+    async function assignFurigana(word) {
+      // 漢字が含まれているかチェック
+      const hasKanji = /[\u4e00-\u9faf]/.test(word);
+      if (!hasKanji) return "";
+      
+      // 単語辞書に登録されている場合はそれを優先
+      if (wordDict[word]) {
+        return wordDict[word];
+      }
+      
+      // kuroshiroが初期化されている場合は使用
+      if (kuroshiroInitialized && kuroshiroInstance) {
+        try {
+          // kuroshiroを使用して変換
+          const result = await kuroshiroInstance.convert(word, {
+            to: "hiragana",
+            mode: "furigana"
+          });
+          
+          // HTML文字列を一時的な要素に入れて解析
+          const tempDiv = document.createElement('div');
+          tempDiv.innerHTML = result;
+          
+          // 変換結果からふりがなを抽出
+          let furigana = "";
+          const extractFurigana = (node) => {
+            if (node.nodeType === Node.TEXT_NODE) {
+              return;
+            } else if (node.tagName === 'RUBY') {
+              const rt = node.querySelector('rt');
+              if (rt) {
+                furigana += rt.textContent;
+              }
+            } else {
+              Array.from(node.childNodes).forEach(extractFurigana);
+            }
+          };
+          
+          extractFurigana(tempDiv);
+          return furigana || ""; // 空文字列を返す（自動で割り当てられない場合）
+        } catch (error) {
+          console.error("kuroshiroでの変換に失敗:", error);
+          // 空文字列を返す（自動で割り当てられない場合）
+          return "";
+        }
+      }
+      
+      // kuroshiroが使えない場合は辞書を使用
+      let furigana = "";
+      let hasAssigned = false;
+      
+      // 一文字ずつ処理
+      for (let i = 0; i < word.length; i++) {
+        const char = word[i];
+        const isKanji = /[\u4e00-\u9faf]/.test(char);
+        
+        if (isKanji && kanjiDict[char]) {
+          furigana += kanjiDict[char];
+          hasAssigned = true;
+        } else if (isKanji) {
+          // 辞書にない漢字は空のままにする
+          hasAssigned = true;
+        }
+      }
+      
+      // 漢字が含まれていて、ふりがなが割り当てられた場合のみ返す
+      return hasAssigned ? furigana : "";
+    }
+    
+    // レンダリング関数
+    function render() {
+      editor.innerHTML = "";
+      data.forEach((item, index) => {
+        const wrapper = document.createElement("span");
+        wrapper.className = "word-wrapper";
+        
+        // 漢字が含まれているかチェック
+        const hasKanji = /[\u4e00-\u9faf]/.test(item.word);
+        
+        if (hasKanji) {
+          const ruby = document.createElement("ruby");
+          const rb = document.createElement("rb");
+          rb.textContent = item.word;
+          ruby.appendChild(rb);
+          
+          const rt = document.createElement("rt");
+          rt.textContent = item.furigana || "";
+          ruby.appendChild(rt);
+          
+          ruby.addEventListener("click", () => editFurigana(index));
+          wrapper.appendChild(ruby);
+        } else {
+          wrapper.textContent = item.word;
+        }
+        
+        editor.appendChild(wrapper);
+      });
+    }
+    
+    // ふりがな編集関数
+    function editFurigana(index) {
+      const item = data[index];
+      // 漢字が含まれているかチェック
+      const hasKanji = /[\u4e00-\u9faf]/.test(item.word);
+      
+      if (hasKanji) {
+        const newFurigana = prompt(`${item.word} のふりがなを入力してください:`, item.furigana);
+        if (newFurigana !== null) {
+          data[index].furigana = newFurigana;
+          render();
+        }
+      }
+    }
+    
+    // 自動分割と自動ふりがな割り当て
+    async function autoSplit() {
+      const text = inputText.value;
+      if (!text.trim()) {
+        statusEl.textContent = "テキストを入力してください";
+        return;
+      }
+      
+      // 処理中の表示
+      statusEl.textContent = "テキストを処理中...";
+      
+      // kuroshiroが初期化されていない場合は初期化
+      if (!kuroshiroInitialized && !kuroshiroInstance) {
+        await initKuroshiro();
+      }
+      
+      let tokens = [];
+      
+      try {
+        if (kuroshiroInitialized && kuroshiroInstance) {
+          // kuroshiroを使用して変換と分割を行う
+          const htmlString = await kuroshiroInstance.convert(text, {
+            mode: "furigana",
+            to: "hiragana"
+          });
+          
+          // HTML文字列を一時的な要素に入れて解析
+          const tempDiv = document.createElement('div');
+          tempDiv.innerHTML = htmlString;
+          
+          // 変換結果からトークンを抽出
+          let currentTokens = [];
+          const processNode = (node) => {
+            if (node.nodeType === Node.TEXT_NODE) {
+              // テキストノードはそのまま追加
+              if (node.textContent.trim()) {
+                currentTokens.push({
+                  word: node.textContent,
+                  furigana: ""
+                });
+              }
+            } else if (node.tagName === 'RUBY') {
+              // ruby要素から単語とふりがなを抽出
+              const word = node.querySelector('rb') ? 
+                           node.querySelector('rb').textContent : 
+                           node.textContent.replace(node.querySelector('rt').textContent, '');
+              const furigana = node.querySelector('rt') ? 
+                              node.querySelector('rt').textContent : '';
+              
+              currentTokens.push({
+                word: word,
+                furigana: furigana
+              });
+            } else {
+              // その他の要素は子ノードを再帰的に処理
+              Array.from(node.childNodes).forEach(processNode);
+            }
+          };
+          
+          processNode(tempDiv);
+          tokens = currentTokens;
+        } else {
+          // 簡易的な分割ルール
+          let currentWord = "";
+          let currentType = null;
+          
+          for (let i = 0; i < text.length; i++) {
+            const char = text[i];
+            const isKanji = /[\u4e00-\u9faf]/.test(char);
+            const isHiragana = /[\u3040-\u309F]/.test(char);
+            const isKatakana = /[\u30A0-\u30FF]/.test(char);
+            
+            let type = isKanji ? "kanji" : (isHiragana ? "hiragana" : (isKatakana ? "katakana" : "other"));
+            
+            if (currentType === null || currentType === type || 
+                (currentType === "kanji" && type === "hiragana")) {
+              currentWord += char;
+              currentType = type;
+            } else {
+              if (currentWord) {
+                // 自動的にふりがなを割り当て
+                const furigana = await assignFurigana(currentWord);
+                tokens.push({
+                  word: currentWord,
+                  furigana: furigana
+                });
+              }
+              currentWord = char;
+              currentType = type;
+            }
+          }
+          
+          if (currentWord) {
+            // 最後の単語にもふりがなを割り当て
+            const furigana = await assignFurigana(currentWord);
+            tokens.push({
+              word: currentWord,
+              furigana: furigana
+            });
+          }
+        }
+      } catch (error) {
+        console.error("テキスト処理中にエラーが発生しました:", error);
+        statusEl.textContent = "処理中にエラーが発生しました。再試行してください。";
+        return;
+      }
+      
+      data = tokens;
+      statusEl.textContent = `${tokens.length}個の単語に分割し、自動でふりがなを割り当てました`;
+      render();
+    }
+    
+    // 手動分割（文字ごとに分割）
+    function manualSplit() {
+      const text = inputText.value;
+      if (!text.trim()) {
+        statusEl.textContent = "テキストを入力してください";
+        return;
+      }
+      
+      const tokens = [];
+      
+      // 一文字ずつ処理
+      for (let i = 0; i < text.length; i++) {
+        const char = text[i];
+        const isKanji = /[\u4e00-\u9faf]/.test(char);
+        
+        tokens.push({
+          word: char,
+          furigana: isKanji ? (kanjiDict[char] || "") : ""
+        });
+      }
+      
+      data = tokens;
+      statusEl.textContent = `${tokens.length}個の文字に分割しました`;
+      render();
+    }
+    
+    // イベントリスナーを設定
+    parseButton.addEventListener("click", () => autoSplit());
+    manualButton.addEventListener("click", manualSplit);
+    
+    // 初期表示と同時にkuroshiroを初期化
+    initKuroshiro();
+    autoSplit();
+  </script>
+</body>
+</html>

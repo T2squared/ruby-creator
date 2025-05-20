@@ -1,0 +1,16 @@
+{
+  "name": "ruby-creator",
+  "version": "1.0.0",
+  "description": "Japanese text editor with ruby annotations",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "kuroshiro": "^1.2.0",
+    "kuroshiro-analyzer-kuromoji": "^1.0.0"
+  },
+  "author": "T2squared",
+  "license": "MIT"
+}
