@@ -180,9 +180,12 @@
           
           // クリックイベントを直接rubyに追加
           ruby.style.cursor = "pointer";
-          ruby.onclick = function() {
-            editFurigana(this.getAttribute("data-index"));
-          };
+          ruby.addEventListener("click", function(event) {
+            event.stopPropagation();
+            const index = this.getAttribute("data-index");
+            console.log("Ruby clicked, index:", index);
+            editFurigana(index);
+          });
           
           wrapper.appendChild(ruby);
         } else {
