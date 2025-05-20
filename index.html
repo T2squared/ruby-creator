@@ -169,6 +169,7 @@
         
         if (hasKanji) {
           const ruby = document.createElement("ruby");
+          ruby.setAttribute("data-index", index);
           const rb = document.createElement("rb");
           rb.textContent = item.word;
           ruby.appendChild(rb);
@@ -177,7 +178,12 @@
           rt.textContent = item.furigana || "";
           ruby.appendChild(rt);
           
-          ruby.addEventListener("click", () => editFurigana(index));
+          // クリックイベントを直接rubyに追加
+          ruby.style.cursor = "pointer";
+          ruby.onclick = function() {
+            editFurigana(this.getAttribute("data-index"));
+          };
+          
           wrapper.appendChild(ruby);
         } else {
           wrapper.textContent = item.word;
@@ -189,7 +195,11 @@
     
     // ふりがな編集関数
     function editFurigana(index) {
+      // 文字列から数値に変換
+      index = parseInt(index, 10);
       const item = data[index];
+      console.log("Editing furigana for index:", index, "word:", item.word);
+      
       // 漢字が含まれているかチェック
       const hasKanji = /[\u4e00-\u9faf]/.test(item.word);
       
